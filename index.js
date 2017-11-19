@@ -20,7 +20,7 @@ export class ResponderDSL {
         const callSignatures = Object.getOwnPropertyNames(ResponderDSL.prototype).map((method) => `\t${callSignature}.${method}(…)`)
         console.warn(`Incomplete responder detected.\nUsage:\n${callSignatures.join('\n')}`)
       }
-    }, 10)
+    }, 10) // Short timeout, as should be called straight away
     this.mockServer = mockServer
     this.method = method
     this.path = path
@@ -102,7 +102,7 @@ const withMockServer = (options, callback) => {
 }
 
 export class SyncMockServer {
-  constructor ({configCallback = defaultConfigCallback, staticPath, requestWindow = 64, requestTimeout = 100} = {}) {
+  constructor ({configCallback = defaultConfigCallback, staticPath, requestWindow = 64, requestTimeout = 500} = {}) {
     const app = express()
     configCallback(app)
     if (staticPath) {
@@ -144,6 +144,7 @@ export class SyncMockServer {
     if (!request.handled) {
       request.handled = true
       request.res.status(501).send('Nothing told me how to handle this request')
+      console.warn(`Unhandled request ${request.req.method} ${request.req.url}, sending 501 response`)
     }
   }
 
@@ -160,11 +161,13 @@ export class SyncMockServer {
   processResponders () {
     for (let i = 0; i < this.pendingResponders.length; i++) {
       const pendingResponder = this.pendingResponders[i]
-      const request = this.findPendingRequest(pendingResponder.matcher)
-      if (request) {
-        pendingResponder.respondTo(request)
-        delete this.pendingResponders[i]
-        i--
+      if (pendingResponder) {
+        const request = this.findPendingRequest(pendingResponder.matcher)
+        if (request) {
+          pendingResponder.respondTo(request)
+          delete this.pendingResponders[i]
+          i--
+        }
       }
     }
   }
@@ -176,14 +179,6 @@ export class SyncMockServer {
         return r
       }
     }
-  }
-
-  forEachPendingRequest (callback) {
-    this.requestBuffer.forEach((request) => {
-      if (!request.handled) {
-        callback(request)
-      }
-    })
   }
 
   url (path) {

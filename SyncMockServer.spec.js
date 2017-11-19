@@ -4,7 +4,33 @@ import withMockServer, {Responder, ResponderDSL} from './index'
 
 const getResponseJson = async (resultFuture) => (await resultFuture).json()
 
+const pauseFor = (time) =>
+  new Promise((resolve) => setTimeout(resolve, time))
+
 describe('SyncMockServer', () => {
+  test('delayed response (the main thing we are after here)', async () => {
+    await withMockServer({}, async (mockServer) => {
+      const resultFuture = fetch(mockServer.url('/example'))
+      let resolved = false
+      resultFuture.then((v) => {
+        resolved = true
+        return v
+      })
+
+      await pauseFor(100)
+
+      expect(resolved).toBeFalsy()
+
+      mockServer.respondTo('GET', '/example').withJson({hello: 'world'})
+
+      const response = await getResponseJson(resultFuture)
+
+      expect(resolved).toBeTruthy()
+
+      expect(response).toEqual({hello: 'world'})
+    })
+  })
+
   test('json response', async () => {
     await withMockServer({}, async (mockServer) => {
       const resultFuture = fetch(mockServer.url('/example'))

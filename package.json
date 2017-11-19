@@ -1,7 +1,7 @@
 {
   "name": "sync-mock-server",
   "version": "1.0.0",
-  "description": "A mock server that allows you to step through responses",
+  "description": "A mock server that allows you to respond when you're ready",
   "main": "index.js",
   "scripts": {
     "test": "jest"
