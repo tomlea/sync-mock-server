@@ -11,40 +11,57 @@ class PendingRequest {
   }
 }
 
-class ResponderDSL {
+export class ResponderDSL {
   constructor (mockServer, method, path) {
+    this.constructionCompleted = false
+    setTimeout(() => {
+      if (!this.constructionCompleted) {
+        const callSignature = `mockServer.respondTo(${JSON.stringify(method)}, ${JSON.stringify(path)})`
+        const callSignatures = Object.getOwnPropertyNames(ResponderDSL.prototype).map((method) => `\t${callSignature}.${method}(…)`)
+        console.warn(`Incomplete responder detected.\nUsage:\n${callSignatures.join('\n')}`)
+      }
+    }, 10)
     this.mockServer = mockServer
     this.method = method
     this.path = path
+    this.constructionCompletedChecker = () => {
+      if (this.constructionCompleted) {
+        throw new Error('You can only set one response in a single handler')
+      } else {
+        this.constructionCompleted = true
+      }
+    }
   }
 
   withJson (json) {
+    this.constructionCompletedChecker()
     this.mockServer.respondTo(this.method, this.path, (responder) => {
       responder.withJson(json)
     })
   }
 
   withHandler (handler) {
+    this.constructionCompletedChecker()
     this.mockServer.respondTo(this.method, this.path, (responder) => {
       responder.withHandler(handler)
     })
   }
 }
 
-class Responder {
+export class Responder {
   constructor (pendingRequst) {
     this.request = pendingRequst
-  }
-
-  withHandler (handler) {
-    this.request.handled = true
-    handler(this.request.req, this.request.res)
   }
 
   withJson (json) {
     this.withHandler((req, res) => {
       res.json(json)
     })
+  }
+
+  withHandler (handler) {
+    this.request.handled = true
+    handler(this.request.req, this.request.res)
   }
 }
 
@@ -85,7 +102,7 @@ const withMockServer = (options, callback) => {
 }
 
 export class SyncMockServer {
-  constructor ({configCallback = defaultConfigCallback, staticPath, requestWindow = 64} = {}) {
+  constructor ({configCallback = defaultConfigCallback, staticPath, requestWindow = 64, requestTimeout = 100} = {}) {
     const app = express()
     configCallback(app)
     if (staticPath) {
@@ -96,13 +113,20 @@ export class SyncMockServer {
     this.pendingResponders = []
     this.server = http.createServer(app).listen()
     this.port = this.server.address().port
+    this.requestTimeout = requestTimeout
 
     app.set('port', this.port)
     app.all('*', this.storeRequestForLaterHandling.bind(this))
   }
 
   storeRequestForLaterHandling (req, res) {
-    this.requestBuffer.push(new PendingRequest(req, res))
+    const pendingRequest = new PendingRequest(req, res)
+    this.requestBuffer.push(pendingRequest)
+    setTimeout(() => {
+      if (!pendingRequest.handled) {
+        this.unhandledRequestHandler(pendingRequest)
+      }
+    }, this.requestTimeout)
     this.processResponders()
   }
 
