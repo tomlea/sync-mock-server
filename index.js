@@ -11,6 +11,26 @@ class PendingRequest {
   }
 }
 
+class ResponderDSL {
+  constructor (mockServer, method, path) {
+    this.mockServer = mockServer
+    this.method = method
+    this.path = path
+  }
+
+  withJson (json) {
+    this.mockServer.respondTo(this.method, this.path, (responder) => {
+      responder.withJson(json)
+    })
+  }
+
+  withHandler (handler) {
+    this.mockServer.respondTo(this.method, this.path, (responder) => {
+      responder.withHandler(handler)
+    })
+  }
+}
+
 class Responder {
   constructor (pendingRequst) {
     this.request = pendingRequst
@@ -25,6 +45,17 @@ class Responder {
     this.withHandler((req, res) => {
       res.json(json)
     })
+  }
+}
+
+class PendingResponder {
+  constructor (matcher, callback) {
+    this.matcher = matcher
+    this.callback = callback
+  }
+
+  respondTo (request) {
+    this.callback(new Responder(request))
   }
 }
 
@@ -43,6 +74,7 @@ const withMockServer = (options, callback) => {
     const response = callback(mockServer)
     if (response && typeof response.then === 'function') {
       response.then(() => mockServer.close(), () => mockServer.close())
+      return response
     } else {
       mockServer.close()
     }
@@ -92,16 +124,21 @@ export class SyncMockServer {
   }
 
   respondTo (method, path, callback) {
-    this.pendingResponders.push([methodPathMatcher(method, path), callback])
-    this.processResponders()
+    if (callback) {
+      const pendingResponder = new PendingResponder(methodPathMatcher(method, path), callback)
+      this.pendingResponders.push(pendingResponder)
+      this.processResponders()
+    } else {
+      return new ResponderDSL(this, method, path)
+    }
   }
 
   processResponders () {
     for (let i = 0; i < this.pendingResponders.length; i++) {
-      const [matcher, callback] = this.pendingResponders[i]
-      const request = this.findPendingRequest(matcher)
+      const pendingResponder = this.pendingResponders[i]
+      const request = this.findPendingRequest(pendingResponder.matcher)
       if (request) {
-        callback(new Responder(request))
+        pendingResponder.respondTo(request)
         delete this.pendingResponders[i]
         i--
       }
